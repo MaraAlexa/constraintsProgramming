@@ -12,26 +12,17 @@ var NumberInput = React.createFactory(React.createClass({
 
 var AnimalCounts = React.createFactory(React.createClass({
   getInitialState: function(){
-    return {
-      dogs: 2,
-      cats: 3,
-      total: 5
-    };
+    var model = new AnimalModel();
+    model.suggest("dogs", 2);
+    model.suggest("cats", 3);
+
+    var state = model.values();
+    state.model = model;
+    return state;
   },
   handleChange: function(name, value){
-    var stateChange = [], total;
-    stateChange[name] = value;
-    if(name == "dogs"){
-      total = value + this.state.cats;
-    } else if(name == "cats"){
-      total = value + this.state.dogs;
-    } else {
-      // we're changing the total, what to do?
-    }
-    if(total) {
-      stateChange.total = total;
-    }
-    this.setState(stateChange);
+    this.state.model.suggest(name, value);
+    this.setState(this.state.model.values());
   },
   render: function(){
     return React.DOM.div(null,
@@ -40,39 +31,43 @@ var AnimalCounts = React.createFactory(React.createClass({
       NumberInput({name: "total", value: this.state.total, onChange: this.handleChange})
     );
   }
-}))
+}));
+
+var AnimalModel = function() {
+  this.solver = new c.SimplexSolver();
+  this.dogs = new c.Variable({name: "dogs"});
+  this.cats = new c.Variable({name: "cats"});
+  this.total = new c.Variable({name: "total"});
+
+  // Ensure all variables are non-negative
+  this.solver.addConstraint(new c.Inequality(this.dogs, c.GEQ, 0));
+  this.solver.addConstraint(new c.Inequality(this.cats, c.GEQ, 0));
+
+  // Ensure total = dogs + cats
+  var sum = new c.Equation(this.total, c.plus(this.dogs, this.cats));
+  this.solver.addConstraint(sum);
+
+  this.weight = 1;
+};
+
+AnimalModel.prototype.values = function() {
+  return {
+    dogs: this.dogs.value,
+    cats: this.cats.value,
+    total: this.total.value
+  };
+};
+
+AnimalModel.prototype.suggest = function(name, value){
+  var variable = this[name]
+  if(variable != this.lastEdited){
+    this.solver.addEditVar(variable, c.Strength.strong, this.weight++);
+    this.lastEdited = variable;
+  }
+  this.solver.suggestValue(variable, value).resolve();
+};
+
 
 ReactDOM.render(
   AnimalCounts(),
   document.getElementById("container"));
-
-
-var solver = new c.SimplexSolver();
-var dogs = new c.Variable({name: "dogs"});
-var cats = new c.Variable({name: "cats"});
-var total = new c.Variable({name: "total"});
-
-// Ensure total = dogs + cats
-var sum = new c.Equation(total, c.plus(dogs, cats));
-solver.addConstraint(sum);
-
-// Let's try suggesting that we have 10 dogs.
-solver.addEditVar(dogs).suggestValue(dogs, 10).resolve();
-console.log("We now have", dogs.value, "dogs");
-console.log("Plus", cats.value, "cats");
-console.log("For a total of", total.value, "animals");
-
-/*
-We now have 10 dogs
-Plus -10 cats
-For a total of 0 animals
-
-Whoops! That's mathematically true, but not very useful.
-With constraint systems, you often have to spell out lots of things you take for granted.
-
-In the next commit, we'll add some rules to keep the variables within reasonable ranges.
-*/
-
-
-
-
